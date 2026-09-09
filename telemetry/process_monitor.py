@@ -1,64 +1,128 @@
-import psutil
+import csv
+import os
 import time
+from datetime import datetime
+
+import psutil
 
 
-def get_process_info(process):
+OUTPUT_FILE = "telemetry/process_telemetry.csv"
+INTERVAL = 2
+
+
+def collect_process_info(process):
     try:
         with process.oneshot():
+
+            cpu_percent = process.cpu_percent()
+
+            memory_percent = process.memory_percent()
+
+            io_read = 0
+            io_write = 0
+
+            try:
+                io = process.io_counters()
+                io_read = io.read_bytes
+                io_write = io.write_bytes
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                pass
+
+            try:
+                context_switches = process.num_ctx_switches()
+                voluntary_switches = context_switches.voluntary
+                involuntary_switches = context_switches.involuntary
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                voluntary_switches = 0
+                involuntary_switches = 0
+
             return {
+                "timestamp": datetime.now().isoformat(),
                 "pid": process.pid,
                 "name": process.name(),
-                "cpu_percent": process.cpu_percent(),
-                "memory_percent": process.memory_percent(),
-                "status": process.status(),
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory_percent,
+                "io_read_bytes": io_read,
+                "io_write_bytes": io_write,
+                "voluntary_context_switches": voluntary_switches,
+                "involuntary_context_switches": involuntary_switches,
                 "num_threads": process.num_threads(),
+                "status": process.status(),
             }
 
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return None
 
 
-def monitor_processes(interval=2):
-    while True:
-        print("\n" + "=" * 80)
-        print("DAIOS PROCESS TELEMETRY")
-        print("=" * 80)
+def initialize_csv():
 
-        processes = []
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-        for process in psutil.process_iter():
-            info = get_process_info(process)
+    if not os.path.exists(OUTPUT_FILE):
 
-            if info:
-                processes.append(info)
+        fields = [
+            "timestamp",
+            "pid",
+            "name",
+            "cpu_percent",
+            "memory_percent",
+            "io_read_bytes",
+            "io_write_bytes",
+            "voluntary_context_switches",
+            "involuntary_context_switches",
+            "num_threads",
+            "status",
+        ]
 
-        processes.sort(
-            key=lambda x: x["cpu_percent"],
-            reverse=True
-        )
+        with open(OUTPUT_FILE, "w", newline="") as file:
 
-        print(
-            f"{'PID':<8}"
-            f"{'NAME':<25}"
-            f"{'CPU %':<10}"
-            f"{'MEM %':<10}"
-            f"{'THREADS':<10}"
-            f"{'STATUS':<15}"
-        )
-
-        print("-" * 80)
-
-        for process in processes[:15]:
-            print(
-                f"{process['pid']:<8}"
-                f"{process['name'][:24]:<25}"
-                f"{process['cpu_percent']:<10.2f}"
-                f"{process['memory_percent']:<10.2f}"
-                f"{process['num_threads']:<10}"
-                f"{process['status']:<15}"
+            writer = csv.DictWriter(
+                file,
+                fieldnames=fields
             )
 
-        time.sleep(interval)
+            writer.writeheader()
+
+
+def monitor_processes():
+
+    initialize_csv()
+
+    print("DAIOS Telemetry Collector Started")
+    print(f"Writing telemetry to: {OUTPUT_FILE}")
+    print("Press Ctrl+C to stop.\n")
+
+    while True:
+
+        with open(OUTPUT_FILE, "a", newline="") as file:
+
+            fields = [
+                "timestamp",
+                "pid",
+                "name",
+                "cpu_percent",
+                "memory_percent",
+                "io_read_bytes",
+                "io_write_bytes",
+                "voluntary_context_switches",
+                "involuntary_context_switches",
+                "num_threads",
+                "status",
+            ]
+
+            writer = csv.DictWriter(
+                file,
+                fieldnames=fields
+            )
+
+            for process in psutil.process_iter():
+
+                info = collect_process_info(process)
+
+                if info:
+                    writer.writerow(info)
+
+        time.sleep(INTERVAL)
 
 
 if __name__ == "__main__":
