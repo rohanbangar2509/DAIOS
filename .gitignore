@@ -39,3 +39,7 @@ dist/
 htmlcov/
 .pytest_cache/
 .daios_venv/
+
+
+# I/O workload generated test data
+workloads/io/*.bin

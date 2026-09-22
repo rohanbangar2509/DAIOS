@@ -1,22 +1,37 @@
 import time
+import numpy as np
+
+DURATION = 60
+MEMORY_SIZE_MB = 1000
 
 
-def memory_workload(duration=60):
-    print(f"Starting memory-bound workload for {duration} seconds...")
+def memory_workload(duration=DURATION):
+    print(
+        f"Starting memory-bound workload for "
+        f"{duration} seconds..."
+    )
 
-    # Allocate approximately 500 MB.
-    data = bytearray(500 * 1024 * 1024)
+    # Allocate a large working set
+    size = (MEMORY_SIZE_MB * 1024 * 1024) // 8
 
-    # Touch the memory so the allocation is actually used.
-    for i in range(0, len(data), 4096):
-        data[i] = 1
+    data = np.zeros(size, dtype=np.float64)
+
+    print(
+        f"Allocated approximately "
+        f"{data.nbytes / (1024 * 1024):.0f} MB"
+    )
+
+    # Touch the memory so physical pages are allocated
+    data[:] = 1.0
 
     end_time = time.time() + duration
 
     while time.time() < end_time:
 
-        for i in range(0, len(data), 4096):
-            data[i] = (data[i] + 1) % 256
+        # Strided memory access.
+        # This forces repeated memory reads/writes
+        # without a Python-level loop over every element.
+        data[::64] += 1.0
 
     print("Memory workload completed.")
 
